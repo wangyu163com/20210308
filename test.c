@@ -24,7 +24,7 @@
 int main(int argc, char *argv[])
 {
 	int a;	
-	
+	a=10;
 	return 0;
 }
 
