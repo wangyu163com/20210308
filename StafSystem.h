@@ -7,6 +7,10 @@
  *   描    述：
  *
  ================================================================*/
+
+#ifndef STAFSYSTEM_H__
+#define STAFSYSTEM_H__
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <arpa/inet.h>
@@ -24,8 +28,6 @@
 #include <sys/stat.h>
 #include <sys/epoll.h>
 
-#ifndef STAFSYSTEM_H__
-#define STAFSYSTEM_H__
 /**********************************************************/
 //注册协议
 #define USER_LOGIN 0	//普通用户注册
@@ -71,7 +73,7 @@
 /**********************************************************/
 //网络地址信息
 #define PORT 8080
-#define IP "192.168.199.246"
+#define IP "192.168.1.104"
 /**********************************************************/
 typedef struct Info{
 	char Name[20];
@@ -106,6 +108,7 @@ char** pazRes=NULL;		//查询数据库返回的指针
 int *Row=NULL;
 int *Colum=NULL;
 char *Errmsg=NULL;
+char *errmsg=NULL;
 int j=0;
 int k=0;
 int l=0;
@@ -122,7 +125,9 @@ int ImportInfo(sqlite3 *db);
 void printf_info(struct sockaddr_in Recv);
 
 //用户退出
-int exit_(int epfd, struct epoll_event* revents, int fd, struct epoll_event events);
+int exit_(int epfd, struct epoll_event* events, int fd);
+
+
 
 //普通用户注册
 int UserLogin(sqlite3* db, InfoP Recvmsg, InfoP Sendmsg, int fd);
@@ -131,7 +136,7 @@ int UserLogin(sqlite3* db, InfoP Recvmsg, InfoP Sendmsg, int fd);
 int VipLogin(sqlite3* db, InfoP Recvmsg, InfoP Sendmsg, int fd);
 
 //用户登录
-int  IdEnter(sqlite3* db, InfoP Recvmsg, InfoP Sendmsg, int fd);
+int IdEnter(sqlite3* db, InfoP Recvmsg, InfoP Sendmsg, int fd);
 
 //添加信息
 void InsertMsg(sqlite3* db, InfoP Recvmsg, InfoP Sendmsg, int fd);
@@ -143,7 +148,10 @@ void DelMsg(sqlite3* db, InfoP Recvmsg, InfoP Sendmsg, int fd);
 void ChangeMsg(sqlite3* db, InfoP Recvmsg, InfoP Sendmsg, int fd, int flag);
 
 //查看信息
-void LookMsg(sqlite3* db, InfoP Recvmsg, InfoP Sendmsg, int fd);
+void LookMsg(sqlite3* db, InfoP Recvmsg, InfoP Sendmsg, int fd, int flag);
+
+//发送信息
+InfoP SendAll(char** pazRes, InfoP Sendmsg, int k);
 /**********************************************************/
 #endif //STAFSYSTEM_H__
 
