@@ -30,7 +30,7 @@
 
 /**********************************************************/
 //注册协议
-#define USER_LOGIN 0	//普通用户注册
+//#define USER_LOGIN 0	//普通用户注册
 #define VIP_LOGIN 1		//管理员用户注册
 #define LOGIN_SUC 2		//注册成功
 #define USER_EXIST 3    //普通用户存在
@@ -65,7 +65,7 @@
 #define FIND_SUC 523	//查看成功
 #define FIND_FAIL 524	//查看失败
 
-/*-------------------------------------------------------*/
+/*--------------------------------------------------------*/
 //退出登录
 #define EXIT 99		//退出登录
 #define EXIT 99		//退出成功
@@ -73,7 +73,19 @@
 /**********************************************************/
 //网络地址信息
 #define PORT 8080
-#define IP "192.168.1.104"
+#define IP "192.168.199.246"
+/**********************************************************/
+//客户端使用
+#define LOGIN 1
+#define ENTER 2
+#define EXITOUT  3
+
+#define LOGIN1 1
+#define EXITOUT1 2
+
+#define ENTER1 1
+#define EXITOUT2 2
+
 /**********************************************************/
 typedef struct Info{
 	char Name[20];
@@ -98,15 +110,15 @@ sqlite3* db=NULL;
 struct sockaddr_in Recv;	//接受
 struct sockaddr_in Send;	//发送
 struct epoll_event events;  //epoll监控的事件
-struct epoll_event *revents=NULL;  //epoll监控返回的事件
+struct epoll_event revents[20];  //epoll监控返回的事件
 int num=1;
-char cmdbuf[50]="";
+char cmdbuf[200]="";
 int ret=0;
 int i=0;
 int fd=0;
 char** pazRes=NULL;		//查询数据库返回的指针
-int *Row=NULL;
-int *Colum=NULL;
+int Row;
+int Colum;
 char *Errmsg=NULL;
 char *errmsg=NULL;
 int j=0;
@@ -125,9 +137,7 @@ int ImportInfo(sqlite3 *db);
 void printf_info(struct sockaddr_in Recv);
 
 //用户退出
-int exit_(int epfd, struct epoll_event* events, int fd);
-
-
+int exit_(int epfd, struct epoll_event* events, int fd, InfoP Recvmsg, sqlite3 *db);
 
 //普通用户注册
 int UserLogin(sqlite3* db, InfoP Recvmsg, InfoP Sendmsg, int fd);
@@ -152,6 +162,18 @@ void LookMsg(sqlite3* db, InfoP Recvmsg, InfoP Sendmsg, int fd, int flag);
 
 //发送信息
 InfoP SendAll(char** pazRes, InfoP Sendmsg, int k);
+/**********************************************************/
+//客户端注册函数
+int CliLogin(int cfd, InfoP Sendmsg, InfoP Recvmsg);
+
+//客户端登录函数
+int CliEnter(int cfd, InfoP Sendmsg, InfoP Recvmsg);
+
+//客户端交互画面
+int CliInter(int cfd, InfoP Sendmsg, InfoP Recvmsg);
+
+//查看信息
+void Findmsg(int cfd, InfoP Sendmsg, InfoP Recvmsg);
 /**********************************************************/
 #endif //STAFSYSTEM_H__
 

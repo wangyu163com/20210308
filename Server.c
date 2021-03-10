@@ -69,7 +69,7 @@ int main(int argc, char *argv[])
 
 	while(1){
 		ret = epoll_wait(epfd, revents, num, -1);
-		if(ret <=0){
+		if(ret == -1){
 			perror("epoll_wait");
 			return -1;
 		}
@@ -96,9 +96,9 @@ int main(int argc, char *argv[])
 					ret = recv(revents[i].data.fd, (void*)&Recvmsg, sizeof(Recvmsg), 0);
 				}while(ret < 0 && errno==EINTR );
 				if(ret == 0){
-					if(exit_(epfd, &events, revents[i].data.fd))
+					if(exit_(epfd, &events, revents[i].data.fd, Recvmsg, db))
 						close(revents[i].data.fd);
-						continue;
+					continue;
 				}
 				switch(Recvmsg.Type){
 					/*	case USER_LOGIN:
@@ -112,25 +112,11 @@ int main(int argc, char *argv[])
 					IdEnter(db, Recvmsg, Sendmsg, revents[i].data.fd);
 					break;
 				case VIP_INS:
-					if(!strcmp(Recvmsg.Res, "1")){
-						InsertMsg(db, Recvmsg, Sendmsg, revents[i].data.fd);
-					}else{
-						bzero(&Sendmsg, sizeof(Sendmsg));
-						Sendmsg.Type = USER_F_FAIL;
-						do{
-							ret = send(revents[i].data.fd, (void*)&Sendmsg, sizeof(Sendmsg), 0);
-						}while(ret<0 && errno == EINTR);
-					}
+					InsertMsg(db, Recvmsg, Sendmsg, revents[i].data.fd);
+					break;
 				case VIP_DEL:
-					if(!strcmp(Recvmsg.Res, "1")){
-						DelMsg(db, Recvmsg, Sendmsg, revents[i].data.fd);
-					}else{
-						bzero(&Sendmsg, sizeof(Sendmsg));
-						Sendmsg.Type = USER_F_FAIL;
-						do{
-							ret = send(revents[i].data.fd, (void*)&Sendmsg, sizeof(Sendmsg), 0);
-						}while(ret<0 && errno == EINTR);
-					}
+					DelMsg(db, Recvmsg, Sendmsg, revents[i].data.fd);
+					break;
 				case VIP_CHANGE:
 					if(!strcmp(Recvmsg.Res, "1"))
 						ChangeMsg(db, Recvmsg, Sendmsg, revents[i].data.fd, 1);
@@ -144,7 +130,7 @@ int main(int argc, char *argv[])
 						LookMsg(db, Recvmsg, Sendmsg, revents[i].data.fd, 0);
 					break;
 				case EXIT:
-					if(exit_(epfd, &events, revents[i].data.fd)){
+					if(exit_(epfd, &events, revents[i].data.fd, Recvmsg, db)){
 						close(revents[i].data.fd);
 					}
 					break;
@@ -166,6 +152,7 @@ int Import(sqlite3* db){
 		printf("%s line:%d\n", sqlite3_errmsg(db), __LINE__);
 		return ret;
 	}
+	fprintf(stderr, "AcInfo表创建成功！\n");
 	return 0;
 }
 
@@ -178,6 +165,7 @@ int ImportInfo(sqlite3 *db){
 		printf("%s line:%d\n", sqlite3_errmsg(db), __LINE__);
 		return ret;
 	}
+	fprintf(stderr, "StaffInfo表创建成功！\n");
 	return 0;
 }
 
@@ -185,8 +173,10 @@ void printf_info(struct sockaddr_in Recv){
 	fprintf(stderr, "[%s:%d]:连接成功！\n", inet_ntoa(Recv.sin_addr), ntohs(Recv.sin_port));
 }
 
-int exit_(int epfd, struct epoll_event* events, int fd){
-	bzero(events, sizeof(events));
+int exit_(int epfd, struct epoll_event* events, int fd, InfoP Recvmsg, sqlite3* db){
+	bzero(cmdbuf, sizeof(cmdbuf));//更改账户状态
+	sprintf(cmdbuf, "update AcInfo set Online = 0 where  Id = \"%s\"", Recvmsg.Id);
+	sqlite3_exec(db, cmdbuf, NULL, NULL, &errmsg);
 	events->events = EPOLLIN;
 	events->data.fd = fd;
 	if(epoll_ctl(epfd, EPOLL_CTL_DEL, fd, events)){
@@ -230,11 +220,11 @@ int VipLogin(sqlite3* db, InfoP Recvmsg, InfoP Sendmsg, int fd){
 	char *errmsg=NULL;
 	bzero(cmdbuf, sizeof(cmdbuf));
 	bzero(&Sendmsg, sizeof(Sendmsg));
-	sprintf(cmdbuf, "select * from AcInfo where Type = 0");
-	while(sqlite3_get_table(db, cmdbuf, &pazRes, Row, Colum, &Errmsg)){
+	sprintf(cmdbuf, "select * from AcInfo where Type = 1");
+	while(sqlite3_get_table(db, cmdbuf, &pazRes, &Row, &Colum, &Errmsg)){
 		perror("sqlite3_get_table");
 	}
-	if(*Row == 1){
+	if(Row == 1){
 		Sendmsg.Type = VIP_EXIST;
 		do{
 			ret = send(fd, (void*)&Sendmsg, sizeof(Sendmsg), 0);
@@ -242,7 +232,7 @@ int VipLogin(sqlite3* db, InfoP Recvmsg, InfoP Sendmsg, int fd){
 		if(ret<0)
 			perror("send");
 		fprintf(stderr, "%s管理员用户已被注册！\n", Recvmsg.Id);
-	}else if(*Row == 0){
+	}else if(Row == 0){
 		bzero(cmdbuf, sizeof(cmdbuf));
 		sprintf(cmdbuf, "insert into AcInfo values(1, \'%s\', \'%s\', 0)", Recvmsg.Id, Recvmsg.Password);
 		while(sqlite3_exec(db, cmdbuf, NULL, NULL, &errmsg))
@@ -265,29 +255,30 @@ int IdEnter(sqlite3* db, InfoP Recvmsg, InfoP Sendmsg, int fd){
 	bzero(cmdbuf, sizeof(cmdbuf));
 	bzero(&Sendmsg, sizeof(Sendmsg));
 	sprintf(cmdbuf, "select * from AcInfo where Id = \'%s\'", Recvmsg.Id);
-	while(sqlite3_get_table(db, cmdbuf, &pazRes, Row, Colum, &Errmsg))
+	while(sqlite3_get_table(db, cmdbuf, &pazRes, &Row, &Colum, &Errmsg))
 		perror("sqlite3_get_table");
-	if(*Row == 1){
+	if(Row == 1){
 		bzero(cmdbuf, sizeof(cmdbuf));
 		sprintf(cmdbuf, "select * from AcInfo where Id = \'%s\' and Password = \'%s\'", Recvmsg.Id, Recvmsg.Password);
-		while(sqlite3_get_table(db, cmdbuf, &pazRes, Row, Colum, &Errmsg))
+		while(sqlite3_get_table(db, cmdbuf, &pazRes, &Row, &Colum, &Errmsg))
 			perror("sqlite3_get_table");
-		if(*Row == 1){
+		if(Row == 1){
 			bzero(cmdbuf, sizeof(cmdbuf));
 			sprintf(cmdbuf, "select * from AcInfo where Id = \'%s\' and Online = 0", Recvmsg.Id);
-			while(sqlite3_get_table(db, cmdbuf, &pazRes, Row, Colum, &Errmsg))
+			while(sqlite3_get_table(db, cmdbuf, &pazRes, &Row, &Colum, &Errmsg))
 				perror("sqlite3_get_table");
-			if(*Row == 1){
+			if(Row == 1){
 				Sendmsg.Type = ENTER_SUC;
 				bzero(cmdbuf, sizeof(cmdbuf));
-				sprintf(cmdbuf, "updata AcInfo set Id = \'%s\' where Online = 1", Recvmsg.Id);
+				sprintf(cmdbuf, "update AcInfo set Online = 1 where Id = \"%s\"", Recvmsg.Id);
 				if(sqlite3_exec(db, cmdbuf, NULL, NULL, &errmsg)<0)
 					perror("sqlite3_exec");
+				fprintf(stderr, "账户状态更新成功！\n");
 				bzero(cmdbuf, sizeof(cmdbuf));
 				sprintf(cmdbuf, "select * from AcInfo where Id = \'%s\' and Type = 0", Recvmsg.Id);
 				if(sqlite3_exec(db, cmdbuf, NULL, NULL, &errmsg)<0)
 					perror("sqlite3_exec");
-				if(*Row == 1)
+				if(Row == 1)
 					strcpy(Sendmsg.Res, "0");
 				else
 					strcpy(Sendmsg.Res, "1");
@@ -315,7 +306,7 @@ int IdEnter(sqlite3* db, InfoP Recvmsg, InfoP Sendmsg, int fd){
 				perror("send");
 			fprintf(stderr, "%s用户名或者密码错误！\n", Recvmsg.Id);
 		}
-	}else if(*Row == 0){
+	}else if(Row == 0){
 		Sendmsg.Type = USER_UFIND;
 		do{
 			ret = send(fd, (void*)&Sendmsg, sizeof(Sendmsg), 0);
@@ -333,14 +324,16 @@ void InsertMsg(sqlite3* db, InfoP Recvmsg, InfoP Sendmsg, int fd){
 	bzero(cmdbuf, sizeof(cmdbuf));
 	bzero(&Sendmsg, sizeof(Sendmsg));
 	sprintf(cmdbuf, "select * form StaffInfo where WorkNum = \'%s\'", Recvmsg.INFO.WorkNum);
-	if(sqlite3_get_table(db, cmdbuf, &pazRes, Row, Colum, &Errmsg))
+	if(sqlite3_get_table(db, cmdbuf, &pazRes, &Row, &Colum, &Errmsg))
 		perror("sqlite3_get_table");
-	if(*Row == 1){
+	if(Row == 1){
 		Sendmsg.Type = INS_FAIL;
 		do{
 			ret = send(fd, (void*)&Sendmsg, sizeof(Sendmsg), 0);
 		}while(ret<0 && errno==EINTR);
 		fprintf(stderr, "%s该员工信息已存在！\n", Recvmsg.INFO.WorkNum);
+		sqlite3_free_table(pazRes);
+		return;
 	}
 	bzero(cmdbuf, sizeof(cmdbuf));
 	sprintf(cmdbuf, "insert into StaffInfo values (\'%s\', \'%s\', \'%c\', \'%s\', \'%f\', \'%s\')", 
@@ -368,9 +361,9 @@ void DelMsg(sqlite3* db, InfoP Recvmsg, InfoP Sendmsg, int fd){
 	bzero(cmdbuf, sizeof(cmdbuf));
 	bzero(&Sendmsg, sizeof(Sendmsg));
 	sprintf(cmdbuf, "select * form StaffInfo where WorkNum = \"%s\"", Recvmsg.INFO.WorkNum);
-	if(sqlite3_get_table(db, cmdbuf, &pazRes, Row, Colum, &Errmsg))
+	if(sqlite3_get_table(db, cmdbuf, &pazRes, &Row, &Colum, &Errmsg))
 		perror("sqlite3_get_table");
-	if(*Row == 1){
+	if(Row == 1){
 		bzero(cmdbuf, sizeof(cmdbuf));
 		sprintf(cmdbuf, "delete from StaffInfo where WorkNum = \"%s\"", Recvmsg.INFO.WorkNum);
 		if(sqlite3_exec(db, cmdbuf, NULL, NULL, &errmsg))
@@ -402,9 +395,9 @@ void ChangeMsg(sqlite3* db, InfoP Recvmsg, InfoP Sendmsg, int fd, int flag){
 	bzero(cmdbuf, sizeof(cmdbuf));
 	bzero(&Sendmsg, sizeof(Sendmsg));
 	sprintf(cmdbuf, "select * from StaffInfo where WorkNum = \"%s\"", Recvmsg.INFO.WorkNum);
-	if(sqlite3_get_table(db, cmdbuf, &pazRes, Row, Colum, &Errmsg))
+	if(sqlite3_get_table(db, cmdbuf, &pazRes, &Row, &Colum, &Errmsg))
 		perror("sqlite3_get_table");
-	if(!(*Row)){
+	if(!(Row)){
 		Sendmsg.Type = CHANGE_FAIL;
 		strcpy(Sendmsg.Res, "不存在！");
 		do{
@@ -417,19 +410,19 @@ void ChangeMsg(sqlite3* db, InfoP Recvmsg, InfoP Sendmsg, int fd, int flag){
 		//管理员用户更改 除了性别和工号
 		bzero(cmdbuf, sizeof(cmdbuf));
 		if(strcmp(Recvmsg.INFO.Name, "0")){
-			sprintf(cmdbuf, "updata StaffInfo set WorkNum = \"%s\" where Name = \"%s\"", Recvmsg.INFO.WorkNum, Recvmsg.INFO.Name);
+			sprintf(cmdbuf, "update StaffInfo set Name = \"%s\" where WorkNum = \"%s\"", Recvmsg.INFO.Name, Recvmsg.INFO.WorkNum);
 			sqlite3_exec(db, cmdbuf, NULL, NULL, &errmsg);
 		}
 		if(strcmp(Recvmsg.INFO.TelNum, "0")){
-			sprintf(cmdbuf, "updata StaffInfo set WorkNum = \"%s\" where TelNum = \"%s\"", Recvmsg.INFO.WorkNum, Recvmsg.INFO.TelNum);
+			sprintf(cmdbuf, "update StaffInfo set TelNum = \"%s\" where  WorkNum = \"%s\"", Recvmsg.INFO.TelNum, Recvmsg.INFO.WorkNum);
 			sqlite3_exec(db, cmdbuf, NULL, NULL, &errmsg);
 		}
 		if(Recvmsg.INFO.Salary){
-			sprintf(cmdbuf, "updata StaffInfo set WorkNum = \"%s\" where Salary = \"%f\"", Recvmsg.INFO.WorkNum, Recvmsg.INFO.Salary);
+			sprintf(cmdbuf, "update StaffInfo set Salary = \"%f\" where  WorkNum = \"%s\"", Recvmsg.INFO.Salary, Recvmsg.INFO.WorkNum);
 			sqlite3_exec(db, cmdbuf, NULL, NULL, &errmsg);
 		}
 		if(strcmp(Recvmsg.INFO.Email, "0")){
-			sprintf(cmdbuf, "updata StaffInfo set WorkNum = \"%s\" where Email = \"%s\"", Recvmsg.INFO.WorkNum, Recvmsg.INFO.Email);
+			sprintf(cmdbuf, "update StaffInfo set Email = \"%s\" where WorkNum = \"%s\"", Recvmsg.INFO.Email, Recvmsg.INFO.WorkNum);
 			sqlite3_exec(db, cmdbuf, NULL, NULL, &errmsg);
 		}
 		Sendmsg.Type = VHANGE_SUC;
@@ -440,12 +433,12 @@ void ChangeMsg(sqlite3* db, InfoP Recvmsg, InfoP Sendmsg, int fd, int flag){
 	}else{
 		//普通用户更改
 		if(strcmp(Recvmsg.INFO.TelNum, "0")){
-			sprintf(cmdbuf, "updata StaffInfo set WorkNum = \"%s\" where TelNum = \"%s\"", Recvmsg.INFO.WorkNum, Recvmsg.INFO.TelNum);
+			sprintf(cmdbuf, "update StaffInfo set TelNum = \"%s\" where  WorkNum = \"%s\"", Recvmsg.INFO.TelNum, Recvmsg.INFO.WorkNum);
 			sqlite3_exec(db, cmdbuf, NULL, NULL, &errmsg);
 			k++;
 		}
 		if(strcmp(Recvmsg.INFO.Email, "0")){
-			sprintf(cmdbuf, "updata StaffInfo set WorkNum = \"%s\" where Email = \"%s\"", Recvmsg.INFO.WorkNum, Recvmsg.INFO.Email);
+			sprintf(cmdbuf, "update StaffInfo set  Email = \"%s\" where WorkNum = \"%s\"", Recvmsg.INFO.Email, Recvmsg.INFO.WorkNum);
 			sqlite3_exec(db, cmdbuf, NULL, NULL, &errmsg);
 			k++;
 		}
@@ -479,12 +472,12 @@ void LookMsg(sqlite3* db, InfoP Recvmsg, InfoP Sendmsg, int fd, int flag){
 		//管理员用户
 		if(strlen(Recvmsg.INFO.WorkNum) == 0){
 			sprintf(cmdbuf, "select * from StaffInfo ");		
-			if(sqlite3_get_table(db, cmdbuf, &pazRes, Row, Colum, &Errmsg))
+			if(sqlite3_get_table(db, cmdbuf, &pazRes, &Row, &Colum, &Errmsg))
 				perror("sqlite3_get_table");
 			Sendmsg.Type = FIND_SUC;
-			while(k<=*Row){
+			while(k<=Row){
 				Sendmsg = SendAll(pazRes, Sendmsg, k);
-				if(k++ >*Row)
+				if(k++ >Row)
 					strcpy(Sendmsg.Res, "10");
 				do{
 					ret = send(fd, (void*)&Sendmsg, sizeof(Sendmsg), 0);
@@ -494,9 +487,9 @@ void LookMsg(sqlite3* db, InfoP Recvmsg, InfoP Sendmsg, int fd, int flag){
 		}else{
 			bzero(cmdbuf, sizeof(cmdbuf));
 			sprintf(cmdbuf, "select * from StaffInfo where WorkNum = \"%s\"", Recvmsg.INFO.WorkNum);
-			if(sqlite3_get_table(db, cmdbuf, &pazRes, Row, Colum, &Errmsg))
+			if(sqlite3_get_table(db, cmdbuf, &pazRes, &Row, &Colum, &Errmsg))
 				perror("sqlite3_get_table");
-			if(*Row){
+			if(Row){
 				Sendmsg = SendAll(pazRes, Sendmsg, 1);
 				Sendmsg.Type = FIND_SUC;
 				strcpy(Sendmsg.Res, "10");
@@ -518,9 +511,9 @@ void LookMsg(sqlite3* db, InfoP Recvmsg, InfoP Sendmsg, int fd, int flag){
 		if(strlen(Recvmsg.INFO.WorkNum) == 0){
 			bzero(cmdbuf, sizeof(cmdbuf));
 			sprintf(cmdbuf, "select Name, WorkNum, Sex, TelNum, Email from StaffInfo where WorkNum = \"%s\"", Recvmsg.INFO.WorkNum);
-			if(sqlite3_get_table(db, cmdbuf, &pazRes, Row, Colum, &Errmsg))
+			if(sqlite3_get_table(db, cmdbuf, &pazRes, &Row, &Colum, &Errmsg))
 				perror("sqlite3_get_table");
-			if(*Row){
+			if(Row){
 				Sendmsg = SendAll(pazRes, Sendmsg, 1);
 				Sendmsg.INFO.Salary = 0.0;
 				Sendmsg.Type = FIND_SUC;
@@ -539,13 +532,13 @@ void LookMsg(sqlite3* db, InfoP Recvmsg, InfoP Sendmsg, int fd, int flag){
 		}else{
 			bzero(cmdbuf, sizeof(cmdbuf));
 			sprintf(cmdbuf, "select Name, WorkNum, Sex, TelNum, Email from StaffInfo");
-			if(sqlite3_get_table(db, cmdbuf, &pazRes, Row, Colum, &Errmsg))
+			if(sqlite3_get_table(db, cmdbuf, &pazRes, &Row, &Colum, &Errmsg))
 				perror("sqlite3_get_table");
 			Sendmsg.Type = FIND_SUC;
-			while(k<=*Row){
+			while(k<=Row){
 				Sendmsg = SendAll(pazRes, Sendmsg, k);
 				Sendmsg.INFO.Salary = 0.0;
-				if((k++)>(*Row))
+				if((k++)>(Row))
 					strcpy(Sendmsg.Res, "10");
 				do{
 					ret = send(fd, (void*)&Sendmsg, sizeof(Sendmsg), 0);
