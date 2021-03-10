@@ -144,15 +144,27 @@ int main(int argc, char *argv[])
 }
 
 int Import(sqlite3* db){
+	int i=1;
+	char** pazRes=NULL;		//查询数据库返回的指针
 	char *errmsg=NULL;
 	bzero(cmdbuf, sizeof(cmdbuf));
 	sprintf(cmdbuf, "create table if not exists AcInfo (Type int, Id char primary key, Password char, Online int)");
-	ret = sqlite3_exec(db, cmdbuf, NULL, NULL, &errmsg);
+	ret = sqlite3_exec(db, cmdbuf, NULL, NULL, &Errmsg);
 	if(ret){
 		printf("%s line:%d\n", sqlite3_errmsg(db), __LINE__);
 		return ret;
 	}
 	fprintf(stderr, "AcInfo表创建成功！\n");
+	bzero(cmdbuf, sizeof(cmdbuf));
+	sprintf(cmdbuf, "select * from AcInfo ");
+	sqlite3_get_table(db, cmdbuf, &pazRes, &Row, &Colum, &errmsg);
+	while(i<=Row){
+		bzero(cmdbuf, sizeof(cmdbuf));
+		sprintf(cmdbuf, "update AcInfo set Online = 0 where Id = \"%s\"", pazRes[i*4+1]);
+		sqlite3_exec(db, cmdbuf, NULL, NULL, &errmsg);
+		i++;
+	}
+	sqlite3_free_table(pazRes);
 	return 0;
 }
 
@@ -425,7 +437,7 @@ void ChangeMsg(sqlite3* db, InfoP Recvmsg, InfoP Sendmsg, int fd, int flag){
 			sprintf(cmdbuf, "update StaffInfo set Email = \"%s\" where WorkNum = \"%s\"", Recvmsg.INFO.Email, Recvmsg.INFO.WorkNum);
 			sqlite3_exec(db, cmdbuf, NULL, NULL, &errmsg);
 		}
-		Sendmsg.Type = VHANGE_SUC;
+		Sendmsg.Type = CHANGE_SUC;
 		do{
 			ret = send(fd, (void*)&Sendmsg, sizeof(Sendmsg), 0);
 		}while(ret<0 && errno == EINTR);
@@ -449,9 +461,9 @@ void ChangeMsg(sqlite3* db, InfoP Recvmsg, InfoP Sendmsg, int fd, int flag){
 			l++;
 		}
 		if(k>0||l==0){
-			Sendmsg.Type = VHANGE_SUC;
+			Sendmsg.Type = CHANGE_SUC;
 		}else if(k==0 && l>0){
-			Sendmsg.Type = CHANGE_FAIL;
+			Sendmsg.Type = CHANGE_FAIL_WU;
 			strcpy(Sendmsg.Res, "无权限！");
 		}
 		do{

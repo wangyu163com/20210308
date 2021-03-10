@@ -58,8 +58,9 @@
 #define DEL_FAIL 517	//删除失败
 
 #define VIP_CHANGE 518	//管理员修改
-#define VHANGE_SUC 519	//修改成功
+#define CHANGE_SUC 519	//修改成功
 #define CHANGE_FAIL 520 //修改失败
+#define CHANGE_FAIL_WU 521 //无权限
 
 #define VIP_FIND 521 //管理员查看
 #define FIND_SUC 523	//查看成功
@@ -89,7 +90,7 @@
 /**********************************************************/
 typedef struct Info{
 	char Name[20];
-	char WorkNum[4];
+	char WorkNum[5];
 	char Sex;
 	char TelNum[15];
 	float Salary;
@@ -174,6 +175,9 @@ int CliInter(int cfd, InfoP Sendmsg, InfoP Recvmsg);
 
 //查看信息
 void Findmsg(int cfd, InfoP Sendmsg, InfoP Recvmsg);
+
+//修改信息
+void Changeinfo(int cfd, InfoP Sendmsg, InfoP Recvmsg);
 /**********************************************************/
 #endif //STAFSYSTEM_H__
 

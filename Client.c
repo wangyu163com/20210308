@@ -76,6 +76,10 @@ CliLogin1:
 			}
 			break;
 		case EXITOUT:
+			Sendmsg.Type = EXIT;
+			do{
+				ret = send(cfd, (void*)&Sendmsg, sizeof(Sendmsg), 0);
+			}while(ret <0&&errno==EINTR);
 			close(cfd);
 			return 0;
 		}
@@ -195,7 +199,7 @@ SCANF2:
 int CliInter(int cfd, InfoP Sendmsg, InfoP Recvmsg){
 	bzero(&Sendmsg, sizeof(Sendmsg));
 	int quanxian=0;
-	char tmp[20]="";
+	int worknum=0;
 	if(strcpy(Recvmsg.Res, "0"))
 		quanxian=0;
 	else
@@ -221,21 +225,28 @@ SCANF3:
 				fprintf(stderr, "此用户无权限！请重新输入：\n");
 				goto SCANF3;
 			}else{
-				//管理员用户操作
+				//管理员用户操作增加
 				fprintf(stderr, "请输入员工姓名：");
 				scanf("%s", Sendmsg.INFO.Name);
 				while(getchar()!='\n');
 				fprintf(stderr, "请输入员工工号：");
-				scanf("%s", Sendmsg.INFO.WorkNum);
+SCANF4:
+				worknum=0;
+				scanf("%d", &worknum);
 				while(getchar()!='\n');
+				if(worknum>10000 || worknum<999){
+					fprintf(stderr, "输入不规范，请重新输入：");
+					goto SCANF4;
+				}
+				sprintf(Sendmsg.INFO.WorkNum, "%d", worknum);
 				fprintf(stderr, "请输入员工性别：");
-				scanf("%c", Sendmsg.INFO.Sex);
+				scanf("%c", &Sendmsg.INFO.Sex);
 				while(getchar()!='\n');
 				fprintf(stderr, "请输入员工电话：");
 				scanf("%s", Sendmsg.INFO.TelNum);
 				while(getchar()!='\n');
 				fprintf(stderr, "请输入员工工资：");
-				scanf("%f", Sendmsg.INFO.Salary);
+				scanf("%f", &Sendmsg.INFO.Salary);
 				while(getchar()!='\n');
 				fprintf(stderr, "请输入员工邮箱：");
 				scanf("%s", Sendmsg.INFO.Email);
@@ -256,6 +267,7 @@ SCANF3:
 			while(getchar()!='\n');
 			break;
 		case 2:
+			Changeinfo(cfd, Sendmsg, Recvmsg);
 			break;
 		case 3:
 			if(quanxian==0){
@@ -263,8 +275,31 @@ SCANF3:
 				fprintf(stderr, "此用户无权限！请重新输入：\n");
 				goto SCANF3;
 			}else{
-				//管理员用户操作
+				//管理员用户操作删除
+				fprintf(stderr, "请输入要删除员工的员工号：");
+SCAN5://输入的工号非法
+				worknum =0;
+				scanf("%d", &worknum);
+				if(worknum>10000 || worknum <999){
+					fprintf(stderr, "输入的员工号非法，请重新输入：");
+					goto SCAN5;
+				}
+				sprintf(Sendmsg.INFO.WorkNum, "%d", worknum);
+				Sendmsg.Type = VIP_DEL;
+				do{
+					ret = send(cfd, (void*)&Sendmsg, sizeof(Sendmsg), 0);
+				}while(ret<0 && errno ==EINTR);
+				do{
+					ret = recv(cfd, (void*)&Recvmsg, sizeof(Recvmsg), 0);
+				}while(ret<0&&errno == EINTR);
+				if(Recvmsg.Type == DEL_FAIL){
+					fprintf(stderr, "删除失败，该工号不存在！\n");
+				}else if(Recvmsg.Type == DEL_SUC){
+					fprintf(stderr, "员工信息删除成功！\n");
+				}
 			}
+			fprintf(stderr, "请输入任意键继续！");
+			while(getchar()!='\n');
 			break;
 		case 4:
 			if(quanxian == 0){
@@ -283,15 +318,16 @@ SCANF3:
 }
 
 void Findmsg(int cfd, InfoP Sendmsg, InfoP Recvmsg){
+	int tmp =0;
 	fprintf(stderr, "请输入要查找的员工工号(查看所有请输入999)：");
 TEM:
-	tem = 0;
-	scanf("%s", tmp);
+	tmp =0;
+	scanf("%d", &tmp);
 	while(getchar()!='\n');
-	if(strcmp(tmp, "10000")>0 || strcmp(tmp, "999")<0){
+	if(tmp>10000 || tmp<999){
 		fprintf(stderr, "输入错误，请重新输入：");
 		goto TEM;
-	}else if(strcmp(tmp, "999")){
+	}else if(tmp == 999){
 		bzero(Sendmsg.INFO.WorkNum, sizeof(Sendmsg.INFO.WorkNum));
 		Sendmsg.Type = VIP_FIND;
 		do{
@@ -299,7 +335,7 @@ TEM:
 		}while(ret<0 && errno == EINTR);
 	}else{
 		Sendmsg.Type = VIP_FIND;
-		sprintf(Sendmsg.INFO.WorkNum, tmp);
+		sprintf(Sendmsg.INFO.WorkNum, "%d", tmp);
 		do{
 			ret = send(cfd, (void*)&Sendmsg, sizeof(Sendmsg), 0);
 		}while(ret<0 && errno == EINTR);
@@ -308,9 +344,62 @@ TEM:
 		do{
 			ret = recv(cfd, (void*)&Recvmsg, sizeof(Recvmsg), 0);
 		}while(ret<0 && errno == EINTR);
-		fprintf(stderr, "姓名：%s  工号：%s  性别：%s  工资：%g  电话：%s  邮箱：%s\n", 
+		fprintf(stderr, "姓名：%s  工号：%s  性别：%c  工资：%g  电话：%s  邮箱：%s\n", 
 				Recvmsg.INFO.Name, Recvmsg.INFO.WorkNum, Recvmsg.INFO.Sex,
 				Recvmsg.INFO.Salary, Recvmsg.INFO.TelNum, Recvmsg.INFO.Email);
 	}
+}
 
+void Changeinfo(int cfd, InfoP Sendmsg, InfoP Recvmsg){
+	int quanxian=0;
+	int worknum =0;
+	if(strcmp(Recvmsg.Res, "0"))
+		quanxian=1;
+	else
+		quanxian=0;
+	fprintf(stderr, "请输入员工姓名(选填，不想填写直接回车，下同)：");
+	scanf("%s", Sendmsg.INFO.Name);
+	while(getchar()!='\n');
+	fprintf(stderr, "请输入员工工号(必填)：");
+SCANF5:
+	worknum=0;
+	scanf("%d", &worknum);
+	while(getchar()!='\n');
+	if(worknum>10000 || worknum<999){
+		fprintf(stderr, "输入不规范，请重新输入：");
+		goto SCANF5;
+	}
+	sprintf(Sendmsg.INFO.WorkNum, "%d", worknum);
+	fprintf(stderr, "请输入员工性别：");
+	scanf("%c", &Sendmsg.INFO.Sex);
+	while(getchar()!='\n');
+	fprintf(stderr, "请输入员工电话：");
+	scanf("%s", Sendmsg.INFO.TelNum);
+	while(getchar()!='\n');
+	fprintf(stderr, "请输入员工工资：");
+	scanf("%f", &Sendmsg.INFO.Salary);
+	while(getchar()!='\n');
+	fprintf(stderr, "请输入员工邮箱：");
+	scanf("%s", Sendmsg.INFO.Email);
+	while(getchar()!='\n');
+	Sendmsg.Type = VIP_CHANGE;
+	if(quanxian ==1)
+		sprintf(Sendmsg.Res, "1");
+	else
+		sprintf(Sendmsg.Res, "0");
+	do{
+		ret = send(cfd, (void*)&Sendmsg, sizeof(Sendmsg), 0);
+	}while(ret<0 && errno == EINTR);
+
+	do{
+		ret=recv(cfd, (void*)&Recvmsg, sizeof(Recvmsg), 0);
+	}while(ret<0 && errno ==EINTR);
+
+	if(Recvmsg.Type == CHANGE_SUC){
+		fprintf(stderr, "修改信息成功！\n");
+	}else if(Recvmsg.Type == CHANGE_FAIL){
+		fprintf(stderr, "该工号不存在！\n");
+	}else if(Recvmsg.Type == CHANGE_FAIL_WU){
+		fprintf(stderr, "该账号无修改姓名和工资权限！\n");
+	}
 }
