@@ -9,11 +9,21 @@
  ================================================================*/
 
 #include "StafSystem.h"
+InfoP SIG;
+int fd;
+void KILL_PID(int sig){
+	SIG.Type = EXIT;
+	send(fd, (void*)&SIG, sizeof(SIG), 0);
+	close(fd);
+	exit(1);
+}
 
 int main(int argc, char *argv[])
 {
+	signal(SIGINT, KILL_PID);
 	InfoP Recvmsg;
 	InfoP Sendmsg;
+	bzero(&SIG, sizeof(SIG));
 	bzero(&Recvmsg, sizeof(Recvmsg));
 	bzero(&Sendmsg, sizeof(Sendmsg));
 	int cfd = socket(AF_INET, SOCK_STREAM, 0);
@@ -21,7 +31,7 @@ int main(int argc, char *argv[])
 		perror("socket");
 		return -1;
 	}
-
+	fd = cfd;
 	struct sockaddr_in Send;
 	Send.sin_family = AF_INET;
 	Send.sin_port   = htons(PORT);
@@ -77,6 +87,7 @@ CliLogin1:
 			break;
 		case EXITOUT:
 			Sendmsg.Type = EXIT;
+			strcpy(Sendmsg.Id, ID);
 			do{
 				ret = send(cfd, (void*)&Sendmsg, sizeof(Sendmsg), 0);
 			}while(ret <0&&errno==EINTR);
@@ -176,8 +187,11 @@ SCANF2:
 			if(ret<0)
 				perror("recv");
 			if(Recvmsg.Type == ENTER_SUC){
-				CliInter(cfd, Sendmsg, Recvmsg);
-				return 1;
+				strcpy(ID, Sendmsg.Id);
+				strcpy(SIG.Id, ID);
+				if(CliInter(cfd, Sendmsg, Recvmsg) == 10){
+					break;
+				}
 			}else if(Recvmsg.Type == USER_FAIL){
 				fprintf(stderr, "用户已登录！\n");
 				return -1;
@@ -197,13 +211,12 @@ SCANF2:
 }
 
 int CliInter(int cfd, InfoP Sendmsg, InfoP Recvmsg){
-	bzero(&Sendmsg, sizeof(Sendmsg));
 	int quanxian=0;
 	int worknum=0;
-	if(strcpy(Recvmsg.Res, "0"))
-		quanxian=0;
-	else
+	if(strcmp(Recvmsg.Res, "0"))
 		quanxian=1;
+	else
+		quanxian=0;
 	while(1){
 		system("clear");
 		fprintf(stderr, "************************************************************\n");
@@ -227,7 +240,7 @@ SCANF3:
 			}else{
 				//管理员用户操作增加
 				fprintf(stderr, "请输入员工姓名：");
-				scanf("%s", Sendmsg.INFO.Name);
+				fgets(Sendmsg.INFO.Name, 20, stdin);
 				while(getchar()!='\n');
 				fprintf(stderr, "请输入员工工号：");
 SCANF4:
@@ -280,6 +293,7 @@ SCANF4:
 SCAN5://输入的工号非法
 				worknum =0;
 				scanf("%d", &worknum);
+				while(getchar()!='\n');
 				if(worknum>10000 || worknum <999){
 					fprintf(stderr, "输入的员工号非法，请重新输入：");
 					goto SCAN5;
@@ -312,7 +326,15 @@ SCAN5://输入的工号非法
 			while(getchar()!='\n');
 			break;
 		case 5:
-			return 0;
+			Sendmsg.Type = EXIT1;
+			strcpy(Sendmsg.Id, ID);
+			bzero(ID, sizeof(ID));
+			fprintf(stderr, "%s:账号需要退出登录！\n", Recvmsg.Id);
+			do{
+				ret = send(cfd, (void*)&Sendmsg, sizeof(Sendmsg), 0);
+			}while(ret<0 && errno ==EINTR);
+			fprintf(stderr, "退出成功！line:%d\n", __LINE__);
+			return 10;
 		}
 	}
 }
@@ -344,9 +366,14 @@ TEM:
 		do{
 			ret = recv(cfd, (void*)&Recvmsg, sizeof(Recvmsg), 0);
 		}while(ret<0 && errno == EINTR);
-		fprintf(stderr, "姓名：%s  工号：%s  性别：%c  工资：%g  电话：%s  邮箱：%s\n", 
+		if(!(Recvmsg.Type == FIND_FAIL))
+			fprintf(stderr, "姓名：%s  工号：%s  性别：%c  工资：%g  电话：%s  邮箱：%s\n", 
 				Recvmsg.INFO.Name, Recvmsg.INFO.WorkNum, Recvmsg.INFO.Sex,
 				Recvmsg.INFO.Salary, Recvmsg.INFO.TelNum, Recvmsg.INFO.Email);
+		else{
+			fprintf(stderr, "%s:该员工信息不存在！\n", Sendmsg.INFO.WorkNum);
+			return;
+		}
 	}
 }
 
@@ -358,8 +385,8 @@ void Changeinfo(int cfd, InfoP Sendmsg, InfoP Recvmsg){
 	else
 		quanxian=0;
 	fprintf(stderr, "请输入员工姓名(选填，不想填写直接回车，下同)：");
-	scanf("%s", Sendmsg.INFO.Name);
-	while(getchar()!='\n');
+	fgets(Sendmsg.INFO.Name, 20, stdin);
+	Sendmsg.INFO.Name[strlen(Sendmsg.INFO.Name)-1] = '\0';
 	fprintf(stderr, "请输入员工工号(必填)：");
 SCANF5:
 	worknum=0;
@@ -370,18 +397,15 @@ SCANF5:
 		goto SCANF5;
 	}
 	sprintf(Sendmsg.INFO.WorkNum, "%d", worknum);
-	fprintf(stderr, "请输入员工性别：");
-	scanf("%c", &Sendmsg.INFO.Sex);
-	while(getchar()!='\n');
 	fprintf(stderr, "请输入员工电话：");
-	scanf("%s", Sendmsg.INFO.TelNum);
-	while(getchar()!='\n');
+	fgets(Sendmsg.INFO.TelNum, 15, stdin);
+	Sendmsg.INFO.TelNum[strlen(Sendmsg.INFO.TelNum)-1] = '\0';
 	fprintf(stderr, "请输入员工工资：");
-	scanf("%f", &Sendmsg.INFO.Salary);
-	while(getchar()!='\n');
+	fgets(cmdbuf, 8, stdin);
+	Sendmsg.INFO.Salary = atof(cmdbuf);
 	fprintf(stderr, "请输入员工邮箱：");
-	scanf("%s", Sendmsg.INFO.Email);
-	while(getchar()!='\n');
+	fgets(Sendmsg.INFO.Email, 20, stdin);
+	Sendmsg.INFO.Email[strlen(Sendmsg.INFO.Email)-1] = '\0';
 	Sendmsg.Type = VIP_CHANGE;
 	if(quanxian ==1)
 		sprintf(Sendmsg.Res, "1");
@@ -391,6 +415,7 @@ SCANF5:
 		ret = send(cfd, (void*)&Sendmsg, sizeof(Sendmsg), 0);
 	}while(ret<0 && errno == EINTR);
 
+	fprintf(stderr, "%s:%s:%d\n", __FILE__, __func__, __LINE__);
 	do{
 		ret=recv(cfd, (void*)&Recvmsg, sizeof(Recvmsg), 0);
 	}while(ret<0 && errno ==EINTR);

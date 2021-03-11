@@ -27,6 +27,7 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/epoll.h>
+#include <signal.h>
 
 /**********************************************************/
 //注册协议
@@ -69,7 +70,7 @@
 /*--------------------------------------------------------*/
 //退出登录
 #define EXIT 99		//退出登录
-#define EXIT 99		//退出成功
+#define EXIT1 999		//退出成功
 
 /**********************************************************/
 //网络地址信息
@@ -122,6 +123,7 @@ int Row;
 int Colum;
 char *Errmsg=NULL;
 char *errmsg=NULL;
+char ID[20]="";
 int j=0;
 int k=0;
 int l=0;
@@ -137,7 +139,7 @@ int ImportInfo(sqlite3 *db);
 //打印客户端连接信息
 void printf_info(struct sockaddr_in Recv);
 
-//用户退出
+//用户退出客户端
 int exit_(int epfd, struct epoll_event* events, int fd, InfoP Recvmsg, sqlite3 *db);
 
 //普通用户注册
@@ -163,6 +165,9 @@ void LookMsg(sqlite3* db, InfoP Recvmsg, InfoP Sendmsg, int fd, int flag);
 
 //发送信息
 InfoP SendAll(char** pazRes, InfoP Sendmsg, int k);
+
+//用户退出登录
+void exit_out(sqlite3* db, InfoP Recvmsg);
 /**********************************************************/
 //客户端注册函数
 int CliLogin(int cfd, InfoP Sendmsg, InfoP Recvmsg);
